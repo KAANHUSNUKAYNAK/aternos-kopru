@@ -1,33 +1,39 @@
 // language: JavaScript, file: index.js, runtime: Node.js 18+
-// Zero-Packet-Loss Buffer Proxy & SRV Cache
+// Zero-Packet-Loss Buffer Proxy & Robust AFK Bot
 const net = require('net');
 const dns = require('dns');
 const WebSocket = require('ws');
 const mineflayer = require('mineflayer');
-const ATERNOS_DOMAIN = 'okuldankacanlar.aternos.me'; // KENDI ATERNOS ADRESINI YAZ
+
+const ATERNOS_DOMAIN = 'okuldankacanlar.aternos.me'; // KENDI ATERNOS ADRESIN
 const PORT = process.env.PORT || 8080;
+
 let cachedHost = null;
 let cachedPort = null;
-// SRV kaydini surekli taze tut (DNS gecikmesini 0'a indirir)
+
+// SRV kaydını sürekli canlı tut
 function refreshDNS() {
     dns.resolveSrv(`_minecraft._tcp.${ATERNOS_DOMAIN}`, (err, addresses) => {
         if (!err && addresses && addresses.length > 0) {
             cachedHost = addresses[0].name;
             cachedPort = addresses[0].port;
-            console.log(`[DNS] Aternos Canli Hedef: ${cachedHost}:${cachedPort}`);
+            console.log(`[DNS] Aternos Hedef: ${cachedHost}:${cachedPort}`);
         }
     });
 }
 refreshDNS();
 setInterval(refreshDNS, 20000);
+
 const wss = new WebSocket.Server({ port: PORT });
+
 wss.on('connection', (ws) => {
-    console.log('[PROXY] Okuldan baglanti alindi. Paketler kuyruga aliniyor...');
+    console.log('[PROXY] Oyuncu baglandi.');
+
     const connectToBackend = (host, port) => {
         const tcpSocket = net.connect(port, host);
         const bufferQueue = [];
         let isConnected = false;
-        // Minecraft'in ilk gonderdigi handshake paketini ASLA kacirma:
+
         ws.on('message', (data) => {
             if (!isConnected) {
                 bufferQueue.push(data);
@@ -35,35 +41,31 @@ wss.on('connection', (ws) => {
                 tcpSocket.write(data);
             }
         });
+
         tcpSocket.on('connect', () => {
-            console.log('[PROXY] Aternos soketi baglandi. Kuyruk bosaltiliyor...');
             isConnected = true;
             while (bufferQueue.length > 0) {
                 tcpSocket.write(bufferQueue.shift());
             }
         });
+
         tcpSocket.on('data', (data) => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(data);
             }
         });
+
         tcpSocket.on('close', () => ws.close());
         ws.on('close', () => tcpSocket.end());
-        tcpSocket.on('error', (err) => {
-            console.error('[TCP Hata]:', err.message);
-            ws.close();
-        });
-        ws.on('error', (err) => {
-            console.error('[WS Hata]:', err.message);
-            tcpSocket.end();
-        });
+        tcpSocket.on('error', () => ws.close());
+        ws.on('error', () => tcpSocket.end());
     };
+
     if (cachedHost && cachedPort) {
         connectToBackend(cachedHost, cachedPort);
     } else {
         dns.resolveSrv(`_minecraft._tcp.${ATERNOS_DOMAIN}`, (err, addresses) => {
             if (err || !addresses || addresses.length === 0) {
-                console.error('[DNS] Aternos kapali veya SRV bulunamadi.');
                 ws.close();
                 return;
             }
@@ -73,32 +75,55 @@ wss.on('connection', (ws) => {
         });
     }
 });
-// AFK Bot (7/24 kilit)
-function startBot() {
+
+// AFK BOT (Ingilizce saf karakter: AFK_Guard)
+let botInstance = null;
+
+function spawnAFKBot() {
     if (!cachedHost || !cachedPort) {
-        setTimeout(startBot, 10000);
+        console.log('[BOT] Aternos adresi bekleniyor...');
+        setTimeout(spawnAFKBot, 10000);
         return;
     }
-    const bot = mineflayer.createBot({
-        host: cachedHost,
-        port: cachedPort,
-        username: 'SunucuNobetcisi',
-        version: '1.20.1'
-    });
-    bot.on('spawn', () => {
-        console.log('[BOT] Aternos sunucusunda. 7/24 kilit devrede.');
-        setTimeout(() => {
-            bot.chat('/register BotSifre123 BotSifre123');
-            bot.chat('/login BotSifre123');
-        }, 2000);
-    });
-    bot.on('end', () => {
-        console.log('[BOT] Koptu, yeniden baglaniyor...');
-        setTimeout(startBot, 10000);
-    });
-    bot.on('error', (err) => {
-        console.log('[BOT]:', err.message);
-    });
+
+    try {
+        console.log(`[BOT] ${cachedHost}:${cachedPort} adresine baglaniyor...`);
+        botInstance = mineflayer.createBot({
+            host: cachedHost,
+            port: cachedPort,
+            username: 'AFK_Guard', // Turkce karaktersiz saf isim
+            version: '1.20.1'
+        });
+
+        botInstance.on('spawn', () => {
+            console.log('[BOT] >>> AFK_Guard SUNUCUDA! 7/24 KILIT AKTIF <<<');
+            setTimeout(() => {
+                botInstance.chat('/register BotSifre123 BotSifre123');
+                botInstance.chat('/login BotSifre123');
+            }, 2000);
+        });
+
+        botInstance.on('end', (reason) => {
+            console.log('[BOT] Ayrildi (' + reason + '), 10 saniye sonra yeniden girecek...');
+            setTimeout(spawnAFKBot, 10000);
+        });
+
+        botInstance.on('error', (err) => {
+            console.log('[BOT Hata]:', err.message);
+            setTimeout(spawnAFKBot, 10000);
+        });
+
+        botInstance.on('kicked', (reason) => {
+            console.log('[BOT Atildi]:', reason);
+            setTimeout(spawnAFKBot, 10000);
+        });
+    } catch (e) {
+        console.error('[BOT Istisna]:', e.message);
+        setTimeout(spawnAFKBot, 10000);
+    }
 }
-setTimeout(startBot, 5000);
-console.log(`MEB Buffer Proxy Aktif - Port: ${PORT}`);
+
+// 5 saniye sonra botu atese ver
+setTimeout(spawnAFKBot, 5000);
+
+console.log(`MEB Buffer Proxy & AFK Engine Aktif - Port: ${PORT}`);
