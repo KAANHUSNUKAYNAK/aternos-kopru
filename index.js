@@ -1,5 +1,5 @@
 // language: JavaScript, file: index.js, runtime: Node.js 18+
-// Zero-Packet-Loss MEB Proxy & 24/7 Aternos Offline Bot (Anti-AFK Armed)
+// Zero-Packet-Loss MEB Proxy & 24/7 Single-Instance Bot Guard
 const net = require('net');
 const dns = require('dns');
 const WebSocket = require('ws');
@@ -77,17 +77,20 @@ wss.on('connection', (ws) => {
     }
 });
 
-// 24/7 ATERNOS NOBETCI BOTU
+// 24/7 TEKİL NÖBETÇİ BOT MOTORU
+let isBotRunning = false;
 let botInstance = null;
 
 function spawnAFKBot() {
+    if (isBotRunning) return; // Çift bot açılmasını engeller
     if (!cachedHost || !cachedPort) {
         setTimeout(spawnAFKBot, 10000);
         return;
     }
 
+    isBotRunning = true;
     try {
-        console.log(`[BOT] Baglanti kuruluyor: ${cachedHost}:${cachedPort}`);
+        console.log(`[BOT] Tekil baglanti baslatiliyor: ${cachedHost}:${cachedPort}`);
         botInstance = mineflayer.createBot({
             host: cachedHost,
             port: cachedPort,
@@ -97,14 +100,14 @@ function spawnAFKBot() {
             checkTimeoutInterval: 60000
         });
 
-        botInstance.on('spawn', () => {
+        botInstance.once('spawn', () => {
             console.log('[BOT] >>> NobetciBot DÜNYAYA GİRDİ! 7/24 KİLİT AKTİF <<<');
             setTimeout(() => {
                 botInstance.chat('/register BotSifre123 BotSifre123');
                 botInstance.chat('/login BotSifre123');
-            }, 2000);
+            }, 1500);
 
-            // HER 45 SANIYEDE BIR HAREKET ET (AFK KICK ENGELLEYICI)
+            // Her 45 saniyede bir kol sallama (Anti-AFK)
             setInterval(() => {
                 if (botInstance && botInstance.entity) {
                     botInstance.look(botInstance.entity.yaw + 0.1, 0, true);
@@ -113,22 +116,19 @@ function spawnAFKBot() {
             }, 45000);
         });
 
-        botInstance.on('end', (reason) => {
-            console.log('[BOT] Baglanti sonlandi (' + reason + '), 10s sonra tekrar giriyor...');
+        botInstance.once('end', (reason) => {
+            console.log('[BOT] Baglanti sonlandi (' + reason + '), 10s sonra tekil giris yapilacak...');
+            isBotRunning = false;
+            botInstance = null;
             setTimeout(spawnAFKBot, 10000);
         });
 
         botInstance.on('error', (err) => {
             console.log('[BOT Hata]:', err.message);
-            setTimeout(spawnAFKBot, 10000);
-        });
-
-        botInstance.on('kicked', (reason) => {
-            console.log('[BOT Atildi]:', reason);
-            setTimeout(spawnAFKBot, 10000);
         });
     } catch (e) {
         console.error('[BOT Istisna]:', e.message);
+        isBotRunning = false;
         setTimeout(spawnAFKBot, 10000);
     }
 }
