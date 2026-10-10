@@ -1,5 +1,5 @@
 // language: JavaScript, file: index.js, runtime: Node.js 18+
-// Zero-Packet-Loss MEB Proxy & 24/7 Single-Instance Bot Guard
+// Safe-Cooldown MEB Proxy & 24/7 Single Guard
 const net = require('net');
 const dns = require('dns');
 const WebSocket = require('ws');
@@ -28,12 +28,19 @@ setInterval(refreshDNS, 20000);
 const wss = new WebSocket.Server({ port: PORT });
 
 wss.on('connection', (ws) => {
-    console.log('[PROXY] Okuldan oyuncu baglandi.');
+    console.log('[PROXY] Okuldan baglanti alindi.');
 
     const connectToBackend = (host, port) => {
         const tcpSocket = net.connect(port, host);
         const bufferQueue = [];
         let isConnected = false;
+
+        // 10 saniyede Aternos cevap vermezse soketi kitleyip bekletme:
+        tcpSocket.setTimeout(10000, () => {
+            console.log('[PROXY] Aternos soket zaman asimi.');
+            tcpSocket.destroy();
+            ws.close();
+        });
 
         ws.on('message', (data) => {
             if (!isConnected) {
@@ -44,7 +51,9 @@ wss.on('connection', (ws) => {
         });
 
         tcpSocket.on('connect', () => {
+            console.log('[PROXY] Aternos soketi baglandi. Kuyruk aktariliyor...');
             isConnected = true;
+            tcpSocket.setTimeout(0); // Baglandiktan sonra zaman asimini kaldir
             while (bufferQueue.length > 0) {
                 tcpSocket.write(bufferQueue.shift());
             }
@@ -58,8 +67,14 @@ wss.on('connection', (ws) => {
 
         tcpSocket.on('close', () => ws.close());
         ws.on('close', () => tcpSocket.end());
-        tcpSocket.on('error', () => ws.close());
-        ws.on('error', () => tcpSocket.end());
+        tcpSocket.on('error', (err) => {
+            console.error('[TCP Hata]:', err.message);
+            ws.close();
+        });
+        ws.on('error', (err) => {
+            console.error('[WS Hata]:', err.message);
+            tcpSocket.end();
+        });
     };
 
     if (cachedHost && cachedPort) {
@@ -77,20 +92,20 @@ wss.on('connection', (ws) => {
     }
 });
 
-// 24/7 TEKİL NÖBETÇİ BOT MOTORU
+// 24/7 NÖBETÇİ BOT MOTORU (30s Guvenli Bekleme)
 let isBotRunning = false;
 let botInstance = null;
 
 function spawnAFKBot() {
-    if (isBotRunning) return; // Çift bot açılmasını engeller
+    if (isBotRunning) return;
     if (!cachedHost || !cachedPort) {
-        setTimeout(spawnAFKBot, 10000);
+        setTimeout(spawnAFKBot, 15000);
         return;
     }
 
     isBotRunning = true;
     try {
-        console.log(`[BOT] Tekil baglanti baslatiliyor: ${cachedHost}:${cachedPort}`);
+        console.log(`[BOT] Guvenli baglanti aciliyor: ${cachedHost}:${cachedPort}`);
         botInstance = mineflayer.createBot({
             host: cachedHost,
             port: cachedPort,
@@ -101,13 +116,13 @@ function spawnAFKBot() {
         });
 
         botInstance.once('spawn', () => {
-            console.log('[BOT] >>> NobetciBot DÜNYAYA GİRDİ! 7/24 KİLİT AKTİF <<<');
+            console.log('[BOT] >>> NobetciBot DÜNYADA! 7/24 KİLİT AKTİF <<<');
             setTimeout(() => {
                 botInstance.chat('/register BotSifre123 BotSifre123');
                 botInstance.chat('/login BotSifre123');
             }, 1500);
 
-            // Her 45 saniyede bir kol sallama (Anti-AFK)
+            // Her 45 saniyede kol salla (Anti-AFK)
             setInterval(() => {
                 if (botInstance && botInstance.entity) {
                     botInstance.look(botInstance.entity.yaw + 0.1, 0, true);
@@ -117,10 +132,10 @@ function spawnAFKBot() {
         });
 
         botInstance.once('end', (reason) => {
-            console.log('[BOT] Baglanti sonlandi (' + reason + '), 10s sonra tekil giris yapilacak...');
+            console.log('[BOT] Ayrildi (' + reason + '), 30s guvenli soguma...');
             isBotRunning = false;
             botInstance = null;
-            setTimeout(spawnAFKBot, 10000);
+            setTimeout(spawnAFKBot, 30000); // 30 saniye bekle ki Aternos spam sanmasin
         });
 
         botInstance.on('error', (err) => {
@@ -129,11 +144,11 @@ function spawnAFKBot() {
     } catch (e) {
         console.error('[BOT Istisna]:', e.message);
         isBotRunning = false;
-        setTimeout(spawnAFKBot, 10000);
+        setTimeout(spawnAFKBot, 30000);
     }
 }
 
-// Botu baslat
-setTimeout(spawnAFKBot, 5000);
+// Render basladiktan 10 saniye sonra botu sok
+setTimeout(spawnAFKBot, 10000);
 
-console.log(`MEB Bridge & 7/24 Engine Hazir - Port: ${PORT}`);
+console.log(`MEB Bridge & Protected Guard Aktif - Port: ${PORT}`);
